@@ -1,4 +1,4 @@
-package tikv
+package main
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"strconv"
-	"gopkg.in/bufio.v1"
 	"github.com/tikv/client-go/txnkv"
 	"github.com/tikv/client-go/key"
 )
@@ -123,57 +122,3 @@ func (c *TiKVClient) DeleteAll(args ...string) {
 		c.TxDelete([]byte(arg))
 	}
 }
-
-//func (c *TiKVClient) DeleteParts(uploadId string) {
-//	k := GenKey(p_prefix, "mybucket", "testput", uploadId, "")
-//	ek := GenKey(p_prefix, "mybucket", "testput", uploadId, string(0xFF))
-//	kvs, _ := c.TxScan(k, ek, 100)
-//	for _, kv := range kvs {
-//
-//		c.TxDelete(kv.K)
-//	}
-//}
-
-func GenKey(args ...string) []byte {
-	buf := bufio.NewBuffer([]byte{})
-	for _, arg := range args {
-		buf.WriteString(arg)
-		buf.WriteString("\\")
-	}
-	key := buf.Bytes()
-
-	return key[:len(key)-1]
-}
-
-type TableType string
-
-const (
-	TableBucket         TableType = "bucket"
-	TableUser           TableType = "user"
-	TableObject         TableType = "object"
-	TableMultipart TableType = "multipart"
-	TablePart     TableType = "part"
-)
-
-var TableMap = map[string]TableType{
-	"bucket": TableBucket,
-	"user": TableUser,
-	"object": TableObject,
-	"multipart": TableMultipart,
-	"part": TablePart,
-}
-
-//func main() {
-//	cli := NewClient()
-//	//cli.DeleteAll("u\\hehehehe\\mybucket", "b\\mybucket", "mybucket\\testput",
-//	//	"m\\mybucket\\testput\\ea14833c4130f118")
-//	//cli.DeleteParts("0dc3ec3d8da6ad112289a6c8")
-//	//cli.TxDelete([]byte("hehe\\dir/dir"))
-//	cli.ScanAll(u_prefix, 10)
-//	cli.ScanAll(b_prefix, 10)
-//	cli.ScanAll(m_prefix, 10)
-//	cli.ScanAll(p_prefix, 10)
-//	cli.ScanAll("hehe", 10)
-//	//cli.ScanAll("", 100)
-//
-//}

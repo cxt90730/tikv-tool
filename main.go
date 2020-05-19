@@ -2,124 +2,27 @@ package main
 
 import (
 	"github.com/urfave/cli"
-	"fmt"
 	"os"
 	"errors"
 	"log"
-	. "github.com/journeymidnight/tikv-tool/tikv"
-	"strings"
-	"strconv"
 )
 
-var startKey string
+var startKey, endKey string
 var maxKeys int
-var pds string
-var isBytes bool
+var table string
 
-func ParseToBytes(s string) (bs []byte, err error) {
-	s = strings.TrimPrefix(s, "[")
-	s = strings.TrimSuffix(s, "]")
-	ss := strings.Split(s, " ")
-	for _, v := range ss {
-		i, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, err
-		}
-		if i < 0 || i > 255 {
-			return nil, errors.New("Invalid bytes")
-		}
-		bs = append(bs, byte(i))
-	}
-	return
+type GlobalOption struct {
+	PDs          string
+	IsKeyBytes   bool
+	IsValueBytes bool
+	IsMsgPack    bool
+	Table        string
+	Bucket       string
+	Object       string
+	Version      string
 }
 
-func SetFunc(key, value string) error {
-	c := NewClient(pds)
-	var k, v []byte
-	var err error
-	if isBytes {
-		k, err = ParseToBytes(key)
-		if err != nil {
-			return err
-		}
-		v, err = ParseToBytes(value)
-		if err != nil {
-			return err
-		}
-	} else {
-		k, v = []byte(key), []byte(value)
-	}
-	return c.TxPut(k, v)
-}
-
-//TODO: Show different struct
-func GetFunc(key string) error {
-	c := NewClient(pds)
-	var k []byte
-	var err error
-	if isBytes {
-		k, err = ParseToBytes(key)
-		if err != nil {
-			return err
-		}
-	} else {
-		k = []byte(key)
-	}
-	KV, err := c.TxGet(k)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(KV.V))
-	return nil
-}
-
-var (
-	u_prefix = "u\\"
-	b_prefix = "b\\"
-	m_prefix = "m\\"
-	p_prefix = "p\\"
-)
-
-func ScanFunc(table string) error {
-	var prefix string
-	switch TableMap[table] {
-	case TableBucket:
-		prefix = b_prefix
-	case TableUser:
-		prefix = u_prefix
-	case TableMultipart:
-		prefix = m_prefix
-	case TableObject:
-		prefix =  ""
-	case TablePart:
-		prefix = prefix
-	default:
-		return errors.New("Invalid table name.")
-	}
-	c := NewClient(pds)
-	c.ScanAll(prefix, startKey, maxKeys)
-	return nil
-}
-
-func DelFunc(key string) error {
-	c := NewClient(pds)
-	var k []byte
-	var err error
-	if isBytes {
-		k, err = ParseToBytes(key)
-		if err != nil {
-			return err
-		}
-	} else {
-		k = []byte(key)
-	}
-	err = c.TxDelete(k)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Delete key", string(k), "success.")
-	return nil
-}
+var global GlobalOption
 
 func main() {
 	app := cli.NewApp()
@@ -131,17 +34,48 @@ func main() {
 		return nil
 	}
 
+	// Global options
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:        "pd",
 			Value:       "pd1:2379",
 			Usage:       "One or a set of pd addresses. e.g: pd1:2379 or pd1:2379,pd2:2378,pd3:2377",
-			Destination: &pds,
+			Destination: &global.PDs,
 		},
 		cli.BoolFlag{
-			Name:        "bytes",
-			Usage:       "The key or value is an array of bytes. e.g:[1 2 3 4 5]",
-			Destination: &isBytes,
+			Name:        "keybytes",
+			Usage:       "The key is an array of bytes when set or delete. e.g:[1 2 3 4 5]",
+			Destination: &global.IsKeyBytes,
+		},
+		cli.BoolFlag{
+			Name:        "valuebytes",
+			Usage:       "The value is an array of bytes when set or get. e.g:[1 2 3 4 5]",
+			Destination: &global.IsValueBytes,
+		},
+		cli.BoolFlag{
+			Name:        "msgpack",
+			Usage:       "Use msgpack to encode(set) or decode(get)",
+			Destination: &global.IsMsgPack,
+		},
+		cli.StringFlag{
+			Name:        "table,t",
+			Usage:       "Set table prefix",
+			Destination: &global.Table,
+		},
+		cli.StringFlag{
+			Name:        "bucket,B",
+			Usage:       "Set bucket",
+			Destination: &global.Bucket,
+		},
+		cli.StringFlag{
+			Name:        "object,O",
+			Usage:       "Set object",
+			Destination: &global.Object,
+		},
+		cli.StringFlag{
+			Name:        "versionid,V",
+			Usage:       "Set version id",
+			Destination: &global.Version,
 		},
 	}
 
@@ -172,13 +106,13 @@ func main() {
 		},
 		{
 			Name:  "scan",
-			Usage: "Scan table keys. Table name currently has: bucket, object, user, multipart, part",
+			Usage: "Scan keys.",
 			Action: func(c *cli.Context) error {
-				if len(c.Args()) != 1 {
+				if len(c.Args()) > 0 {
 					cli.ShowCommandHelp(cli.NewContext(app, nil, nil), "scan")
 					return errors.New("Invalid arguments.")
 				}
-				return ScanFunc(c.Args()[0])
+				return ScanFunc(startKey, endKey, maxKeys)
 			},
 			Flags: []cli.Flag{
 				cli.StringFlag{
@@ -187,7 +121,12 @@ func main() {
 					Usage:       "Start object key",
 					Destination: &startKey,
 				},
-
+				cli.StringFlag{
+					Name:        "endkey,e",
+					Value:       "",
+					Usage:       "End object key",
+					Destination: &endKey,
+				},
 				cli.IntFlag{
 					Name:        "limit,l",
 					Value:       1000,
